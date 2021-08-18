@@ -1,0 +1,196 @@
+---
+title: "heartdisease"
+output: html_document
+---
+
+## Heart Disease
+
+This report aims to highlight factors that contribute to heart disease by analyzing a dataset obtained from Kaggle. This dataset dates from 1988 and consists of four databases: Cleveland, Hungary, Switzerland, and Long Beach V. It contains 14 attributes and 1025 observations. 
+
+### Loading Libraries
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(GGally)
+library(caret)
+library(glmnet)
+library(plotmo)
+```
+
+
+### Importing Dataset
+
+
+```{r pressure, echo=FALSE}
+heart <- read_csv("C:/Users/Lenovo/Downloads/heart.csv")
+```
+
+### Checking structure and dimensions of data
+```{r}
+View(heart)
+head(heart)
+str(heart)
+```
+
+### selecting variables
+```{r}
+heart_df <- heart %>% select(age, sex, cp, trestbps, chol, target)
+```
+
+### Missing values
+```{r}
+heart %>% filter(is.na(age))
+```
+
+### Plots for each variable
+
+```{r}
+ggplot(heart_df,aes(x=age)) + geom_histogram(bins=50)
+```
+
+It has two modes i.e. it is a bimodal distribution which points to the fact that there may be two types of age groups within the data.
+
+```{r}
+heart_df$sex %>% table
+```
+
+The data contains about 713 males and 312 females
+
+```{r}
+heart_df$cp %>% table
+```
+
+This table shows the distribution of people with varied levels of chest pain
+
+```{r}
+ggplot(heart_df, aes(x=trestbps)) + geom_histogram(bins=50)
+```
+
+The data is mildly right skewed, so a new column is generate by using mutate function. Log transformation is done.
+
+```{r}
+heart_df <- heart_df %>% mutate(log1_trestbps = log1p(trestbps)) %>% select(-trestbps)
+
+ggplot(heart_df, aes(x=log1_trestbps)) + geom_histogram(bins=50)
+```
+
+The variable is now normally distributed
+
+```{r}
+ggplot(heart_df, aes(x=chol)) + geom_histogram(bins=50)
+```
+
+The data is mildly right skewed, so a new column is generate by using mutate function. Log transformation is done.
+
+```{r}
+heart_df <- heart_df %>% mutate(log1_chol = log1p(chol)) %>% select(-chol)
+
+ggplot(heart_df, aes(x=log1_chol)) + geom_histogram(bins=50)
+```
+
+The variable is now normally distributed
+
+```{r}
+heart_df$target %>% table
+```
+
+The table shows the number of people who reported having a heart disease
+
+### Multivariate Inspection and Transformation
+
+##### Target vs. Age
+```{r}
+ggplot(heart_df, aes(x=age, fill=factor(target))) +
+  geom_density(alpha=0.5) +
+  geom_vline(xintercept=c(54, 70), color='red', linetype=2) + labs(title = "Target vs. age")
+```
+
+In the age group of about 28 to 54, lesser number of people have heart disease. On the contrary more people between 54 to 70 years reported having a heart disease. After 70 the number of people reporting heart disease decreased again.
+So there are three age groups
+Below 54 years
+54 - 70 years
+70 years & above
+
+```{r}
+heart_df <- heart_df %>% mutate(
+  AgeCategories = case_when(
+    age < 54 ~ 'Adults',
+    age >= 54 & age < 70 ~ 'Older Adults',
+    age >= 70 ~ 'Elderly',
+  )
+)
+heart_df$AgeCategories %>% table(useNA='always')
+```
+
+#### Target vs. Sex
+```{r}
+heart_df %>% mutate(
+  sex = ifelse(sex==1, "Male", "Female")
+)%>%ggplot(aes(x=sex, fill=factor(target))) +
+  geom_bar(position='dodge') + labs(title = "Target vs. sex")
+```
+
+More males have heart diseases compared to females as reported by the graph. However since the number of males is about twice the number of females, the presence of heart disease cannot be connected to gender completely
+
+#### Target vs. chest pain
+```{r}
+ggplot(heart_df, aes(x=cp, fill=factor(target))) +
+  geom_bar(position='dodge') + labs(title = "Target vs. chest pain")
+```
+
+People with no chest pain reported having heart disease. This shows that chest pain is not a symptom of heart disease
+
+#### Target vs. resting blood pressure
+```{r}
+ggplot(heart_df, aes(x=log1_trestbps, fill=factor(target))) +
+  geom_density(alpha=0.5) + labs(title = "Target vs. resting blood pressure")
+```
+
+People with heart disease tend to have a lower blood pressure in comparison to their counterparts
+
+#### Target vs. cholestrol rate
+```{r}
+ggplot(heart_df, aes(x=log1_chol, fill=factor(target))) +
+  geom_density(alpha=0.5) + labs(title = "Target vs. cholestrol rate")
+```
+
+People with heart disease tend to have a higher cholestrol concentrations in comparison to their counterparts
+
+### Multicollinearity amongst continuous variables
+
+#### Age vs blood pressure
+```{r}
+print(cor(heart_df$age, heart_df$log1_trestbps))
+ggplot(heart_df, aes(x=age, y=log1_trestbps)) +
+  labs(title = "Multicollinearity check for Age and Log1_trestbps") +
+  geom_point() +
+  geom_smooth(method='lm')
+```
+
+The correlation value is 0.2673 which is very low i.e. Age and blood pressure have a weak positive correlation and so multicollinearity is not a problem
+
+#### Age vs. cholestrol rate
+```{r}
+print(cor(heart_df$age, heart_df$log1_chol))
+ggplot(heart_df, aes(x=age, y=log1_chol)) +
+  labs(title = "Multicollinearity check for Age and Log1_chol") +
+  geom_point() +
+  geom_smooth(method='lm')
+```
+
+The correlation value is 0.217 which is very low i.e. Age and blood pressure have a weak positive correlation and so multicollinearity is not a problem
+
+#### Blood pressure vs. cholestrol
+```{r}
+print(cor(heart_df$log1_trestbps, heart_df$log1_chol))
+ggplot(heart_df, aes(x=log1_trestbps, y=log1_chol)) +
+  labs(title = 'Multicollinearity check for Log1_trestbps and Log1_chol') +
+  geom_point() +
+  geom_smooth(method='lm')
+```
+
+The correlation value is 0.132 which is very low i.e. Age and blood pressure have a weak positive correlation and so multicollinearity is not a problem
+
+
